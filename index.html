@@ -43,13 +43,13 @@
     <fieldset class="strategy">
       <legend>Threshold strategy</legend>
       <label><input type="radio" name="strategy" value="fixed" checked> Fixed (slider)</label>
-      <label><input type="radio" name="strategy" value="ga"> GA-optimized (precomputed)</label>
-      <label><input type="radio" name="strategy" value="oracle"> Oracle (noise&nbsp;+&nbsp;0.1)</label>
+      <label><input type="radio" name="strategy" value="ga"> GA-optimized (precomputed on TRAIN seeds)</label>
+      <label><input type="radio" name="strategy" value="oracle"> Oracle reference (θ<sub>e</sub> = min(1, noise<sub>e</sub> + 0.10))</label>
       <label id="liveOptLabel" hidden><input type="radio" name="strategy" value="live"> Live-GA result</label>
     </fieldset>
     <div class="buttons">
       <button id="runBtn" class="primary" disabled>▶ Run scenario</button>
-      <button id="gaBtn" disabled>🧬 Optimize live (GA)</button>
+      <button id="gaBtn" disabled>🧬 Optimize live (small-budget demo, not the full study)</button>
       <button id="cmpBtn" disabled>⚔️ Compare strategies</button>
     </div>
     <div id="gaStatus" class="status" role="status"></div>
@@ -86,8 +86,28 @@
       <li><b>GA-optimized:</b> per-edge thresholds evolved by a genetic algorithm with
         betweenness-guided mutation (full study in the
         <a href="https://github.com/venky29823/epidemic-breakers-optiforge26">GitHub repo</a>).</li>
-      <li><b>Oracle:</b> θ set just above each edge's true noise amplitude — the
-        information-theoretic ceiling, unavailable to any real tuner.</li>
+      <li><b>Oracle reference:</b> θ<sub>e</sub> = min(1, noise<sub>e</sub> + 0.10) —
+        a reference heuristic: each edge's theta is set from its hidden noise
+        amplitude; not available to any real tuner and not a proven optimum.</li>
+    </ul>
+  </section>
+  <section class="panel" aria-label="Limitations">
+    <h2>Limitations</h2>
+    <ul>
+      <li><b>JS port, not the original:</b> the simulator, fitness function and
+        GA here are a faithful JavaScript port of the Python study, but the
+        random streams differ (cyrb53/mulberry32 here vs NumPy there), so
+        exact figures won't match across languages. Cross-language parity is
+        tested in <code>tests/parity.test.js</code>.</li>
+      <li><b>Small-sample comparisons:</b> the on-page strategy comparison
+        averages over a handful of scenarios. Scenario variance is high —
+        differences smaller than the spread are not meaningful.</li>
+      <li><b>Oracle is a heuristic:</b> it uses hidden per-edge noise values no
+        real tuner can see, and the +0.10 margin is arbitrary. It marks
+        headroom, not an optimum.</li>
+      <li><b>One graph:</b> all thresholds were tuned on this specific
+        40-node / 111-edge call graph. They are not general — a different
+        service topology needs its own tuning run.</li>
     </ul>
   </section>
 </main>
