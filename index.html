@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Epidemic Breakers — Interactive Circuit-Breaker Tuning</title>
+<meta name="description" content="Interactive demo: tune per-edge circuit-breaker thresholds on a microservice call graph to stop failure cascades. GA-optimized vs fixed vs oracle.">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header class="site-header">
+  <div class="wrap">
+    <h1>🦠 Epidemic Breakers</h1>
+    <p class="subtitle">One slow service. A cascade through its callers — unless a circuit breaker
+      trips first. Tune <code>θ</code> per edge to minimize
+      <code>F = cascade + 2·false&nbsp;trips + 0.1·latency</code>.</p>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="panel" aria-label="Controls">
+    <h2>Controls</h2>
+    <div class="grid-controls">
+      <label>Scenario seed
+        <input id="seed" type="number" value="7" step="1">
+      </label>
+      <label>Spread probability <span class="val" id="spreadPVal">0.25</span>
+        <input id="spreadP" type="range" min="0.05" max="0.60" step="0.01" value="0.25">
+      </label>
+      <label>Breaker cooldown (steps) <span class="val" id="cooldownVal">5</span>
+        <input id="cooldown" type="range" min="1" max="20" step="1" value="5">
+      </label>
+      <label>Monitoring noise <span class="val" id="noiseVal">0.30</span>
+        <input id="noise" type="range" min="0" max="0.60" step="0.05" value="0.30">
+      </label>
+      <label>Simulation steps <span class="val" id="stepsVal">40</span>
+        <input id="steps" type="range" min="10" max="80" step="5" value="40">
+      </label>
+      <label>Fixed θ <span class="val" id="thetaVal">0.50</span>
+        <input id="theta" type="range" min="0.05" max="0.95" step="0.05" value="0.50">
+      </label>
+    </div>
+    <fieldset class="strategy">
+      <legend>Threshold strategy</legend>
+      <label><input type="radio" name="strategy" value="fixed" checked> Fixed (slider)</label>
+      <label><input type="radio" name="strategy" value="ga"> GA-optimized (precomputed)</label>
+      <label><input type="radio" name="strategy" value="oracle"> Oracle (noise&nbsp;+&nbsp;0.1)</label>
+      <label id="liveOptLabel" hidden><input type="radio" name="strategy" value="live"> Live-GA result</label>
+    </fieldset>
+    <div class="buttons">
+      <button id="runBtn" class="primary" disabled>▶ Run scenario</button>
+      <button id="gaBtn" disabled>🧬 Optimize live (GA)</button>
+      <button id="cmpBtn" disabled>⚔️ Compare strategies</button>
+    </div>
+    <div id="gaStatus" class="status" role="status"></div>
+    <div class="progress" id="gaProgress" hidden><div class="bar" id="gaBar"></div></div>
+    <p class="hint">Tip: drag θ low and false trips explode; drag it high and the cascade
+      outruns the breakers. Changing spread/noise regenerates the per-edge environment.</p>
+  </section>
+
+  <section class="panel" aria-label="Results">
+    <h2>Results</h2>
+    <div class="cards">
+      <div class="card"><div class="card-label">F (lower is better)</div><div class="card-value" id="mF">–</div></div>
+      <div class="card"><div class="card-label">Cascade size</div><div class="card-value" id="mCasc">–</div></div>
+      <div class="card"><div class="card-label">False trips</div><div class="card-value" id="mFt">–</div></div>
+      <div class="card"><div class="card-label">Latency penalty</div><div class="card-value" id="mLat">–</div></div>
+    </div>
+    <h3 id="curveTitle">Epidemic curve</h3>
+    <canvas id="curve" height="260" aria-label="Slow services over time"></canvas>
+    <h3>Strategy comparison <small>(mean F over 8 fresh scenarios — lower wins)</small></h3>
+    <canvas id="cmpChart" height="220" aria-label="Mean F per strategy"></canvas>
+    <table id="cmpTable" hidden>
+      <thead><tr><th>Strategy</th><th>Mean F</th><th>Cascade</th><th>False trips</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section class="panel" aria-label="Method">
+    <h2>How it works</h2>
+    <ul>
+      <li><b>Graph:</b> 40 microservices, 111 call edges. Edge <i>u → v</i> means <i>u</i> calls <i>v</i>;
+        slowness spreads from callee to caller.</li>
+      <li><b>Breakers:</b> each edge watches a noisy stress signal (EMA of callee slowness);
+        it opens for <i>cooldown</i> steps when the signal crosses its threshold θ.</li>
+      <li><b>GA-optimized:</b> per-edge thresholds evolved by a genetic algorithm with
+        betweenness-guided mutation (full study in the
+        <a href="https://github.com/venky29823/epidemic-breakers-optiforge26">GitHub repo</a>).</li>
+      <li><b>Oracle:</b> θ set just above each edge's true noise amplitude — the
+        information-theoretic ceiling, unavailable to any real tuner.</li>
+    </ul>
+  </section>
+</main>
+
+<footer class="site-footer">
+  <div class="wrap">
+    Epidemic Breakers · OptiForge 2026 · Track 05: Intelligent Systems &amp; Autonomous Computing ·
+    <a href="https://github.com/venky29823/epidemic-breakers-optiforge26">source &amp; full study</a>
+  </div>
+</footer>
+
+<script src="sim.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
