@@ -88,6 +88,53 @@ function drawBarChart(cv, items) {
   ctx.fillText(maxV.toFixed(1), padL - 6, padT + 10);
 }
 
+/* ---------- theta-vs-noise plot ---------- */
+function drawThetaPlot(cv, info) {
+  const [ctx, W, H] = fitCanvas(cv);
+  ctx.clearRect(0, 0, W, H);
+  const padL = 44, padR = 12, padT = 12, padB = 30;
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const idx = info.noise.map((_, i) => i).sort((a, b) => info.noise[a] - info.noise[b]);
+  const X = (k) => padL + (k / Math.max(1, idx.length - 1)) * iw;
+  const Y = (v) => padT + ih - Math.min(Math.max(v, 0), 1) * ih;
+  ctx.font = "11px sans-serif";
+  // axes
+  ctx.strokeStyle = "#e2e8f0"; ctx.fillStyle = "#64748b"; ctx.textAlign = "right";
+  for (const v of [0, 0.5, 1]) {
+    const y = Y(v);
+    ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(padL + iw, y); ctx.stroke();
+    ctx.fillText(v.toFixed(1), padL - 6, y + 4);
+  }
+  ctx.fillStyle = "#64748b"; ctx.textAlign = "center";
+  ctx.fillText("edges sorted by noise amplitude →", padL + iw / 2, H - 8);
+  ctx.save(); ctx.translate(12, padT + ih / 2); ctx.rotate(-Math.PI / 2);
+  ctx.fillText("θ", 0, 0); ctx.restore();
+  // reference: min(1, noise + 0.10), dashed
+  ctx.strokeStyle = "#94a3b8"; ctx.lineWidth = 1.5; ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  idx.forEach((ei, k) => {
+    const v = Math.min(1, info.noise[ei] + 0.10);
+    k ? ctx.lineTo(X(k), Y(v)) : ctx.moveTo(X(k), Y(v));
+  });
+  ctx.stroke(); ctx.setLineDash([]);
+  // strategy theta
+  ctx.strokeStyle = "#2563eb"; ctx.lineWidth = 2;
+  ctx.beginPath();
+  idx.forEach((ei, k) => {
+    const v = info.theta[ei];
+    k ? ctx.lineTo(X(k), Y(v)) : ctx.moveTo(X(k), Y(v));
+  });
+  ctx.stroke();
+  // legend
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#2563eb"; ctx.fillRect(padL + 10, 14, 12, 12);
+  ctx.fillStyle = "#1a2332"; ctx.fillText(`θ (${info.strategy})`, padL + 28, 24);
+  ctx.fillStyle = "#94a3b8"; ctx.fillRect(padL + 150, 14, 12, 12);
+  ctx.fillStyle = "#1a2332"; ctx.fillText("min(1, noise + 0.10)", padL + 178, 24);
+  cv.setAttribute("aria-label",
+    `Per-edge threshold versus noise amplitude for ${info.strategy}, edges sorted by noise.`);
+}
+
 /* ---------- call-graph canvas (layout computed once, cached) ---------- */
 function graphLayout() {
   if (state.layout) return state.layout;
@@ -147,6 +194,7 @@ function renderDynamic() {
     [{ label: `${run.label} (seed ${run.seed})`, data: run.metrics.slowHistory }],
     ["#2563eb"], step);
   drawGraph($("graphCanvas"), step);
+  if (run.theta && run.noise) drawThetaPlot($("thetaPlot"), run);
   const hist = run.metrics.slowHistory;
   let peak = 0, peakStep = 0;
   hist.forEach((v, i) => { if (v > peak) { peak = v; peakStep = i; } });
@@ -154,8 +202,8 @@ function renderDynamic() {
     `Peak ${peak} slow services at step ${peakStep}, ${run.metrics.falseTrips} false trips.`;
 }
 
-function showRun(metrics, label, seed) {
-  state.lastRun = { metrics, label, seed };
+function showRun(metrics, label, seed, extra = {}) {
+  state.lastRun = { metrics, label, seed, ...extra };
   const slider = $("timeStep");
   slider.max = metrics.nSteps - 1;
   slider.value = metrics.nSteps - 1;
@@ -212,7 +260,8 @@ function runScenario() {
   const theta = thetaFor(ctrl.strategy, ctrl, state.graph.edges.length);
   const m = simulate(state.graph, params, theta, ctrl.seed,
     { cooldown: ctrl.cooldown, nSteps: ctrl.nSteps, recordHistory: true, recordDetail: true });
-  showRun(m, `${STRATEGY_NAMES[ctrl.strategy]}, seed ${ctrl.seed}`, ctrl.seed);
+  showRun(m, `${STRATEGY_NAMES[ctrl.strategy]}, seed ${ctrl.seed}`, ctrl.seed,
+    { strategy: ctrl.strategy, theta: Array.from(theta), noise: Array.from(params.noise) });
 }
 
 async function optimizeLive() {
@@ -236,7 +285,8 @@ async function optimizeLive() {
     $("gaStatus").textContent = `Done — best train F ${res.bestF.toFixed(2)}. Showing its epidemic curve.`;
     const m = simulate(state.graph, params, res.best, ctrl.seed,
       { cooldown: ctrl.cooldown, nSteps: ctrl.nSteps, recordHistory: true, recordDetail: true });
-    showRun(m, `live GA, seed ${ctrl.seed}`, ctrl.seed);
+    showRun(m, `live GA, seed ${ctrl.seed}`, ctrl.seed,
+      { strategy: "live", theta: Array.from(res.best), noise: Array.from(params.noise) });
   } finally {
     $("gaProgress").hidden = true;
     $("gaBtn").disabled = false; $("runBtn").disabled = false; $("cmpBtn").disabled = false;

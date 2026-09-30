@@ -81,6 +81,10 @@
       <span><i class="edge open"></i>breaker open</span>
       <span><i class="edge closed"></i>edge closed</span>
     </div>
+    <h3>Theta vs noise <small>(edges sorted by noise amplitude)</small></h3>
+    <canvas id="thetaPlot" height="220" aria-label="Per-edge threshold versus noise amplitude"></canvas>
+    <p class="hint">One number cannot fit 111 edges: the oracle reference tracks
+      each edge's noise, the GA lands in between, a fixed θ is flat.</p>
     <h3>Strategy comparison <small>(mean F over 8 fresh scenarios — lower wins)</small></h3>
     <canvas id="cmpChart" height="220" aria-label="Mean F per strategy"></canvas>
     <table id="cmpTable" hidden>
