@@ -1,6 +1,6 @@
 {
- "generated_by": "gen_reference.py (Python simulator, networkx)",
- "generated_at": "2026-09-30T10:49:37",
+ "generated_by": "gen_reference.py (Python simulator, networkx); ga_best_theta refreshed 2026-09-30 after best_theta.npy regeneration (scripts/make_best_theta.py), 256 seeds base 5000, sd ddof=1",
+ "generated_at": "2026-09-30T06:28:55",
  "n_nodes": 40,
  "n_edges": 111,
  "edge_params": {
@@ -134,8 +134,8 @@
     "n": 256
    },
    "ga_best_theta": {
-    "mean": 33.678526182432435,
-    "sd": 10.513060884904466,
+    "mean": 34.65209740990991,
+    "sd": 10.086760002142144,
     "n": 256
    },
    "oracle": {
