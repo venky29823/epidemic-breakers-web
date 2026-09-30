@@ -5,6 +5,12 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Epidemic Breakers — Interactive Circuit-Breaker Tuning</title>
 <meta name="description" content="Interactive demo: tune per-edge circuit-breaker thresholds on a microservice call graph to stop failure cascades. GA-optimized vs fixed vs oracle.">
+<meta name="theme-color" content="#0f172a">
+<meta property="og:title" content="Epidemic Breakers — Interactive Circuit-Breaker Tuning">
+<meta property="og:description" content="Tune per-edge circuit-breaker thresholds on a microservice call graph to stop failure cascades. GA-optimized vs fixed vs oracle reference.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://venky29823.github.io/epidemic-breakers-web/">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%A6%A0%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -72,7 +78,7 @@
 
   <section class="panel" aria-label="Results">
     <h2>Results</h2>
-    <div class="cards">
+    <div class="cards" aria-live="polite">
       <div class="card"><div class="card-label">F (lower is better)</div><div class="card-value" id="mF">–</div></div>
       <div class="card"><div class="card-label">Cascade size</div><div class="card-value" id="mCasc">–</div></div>
       <div class="card"><div class="card-label">False trips</div><div class="card-value" id="mFt">–</div></div>
@@ -101,10 +107,12 @@
     <div class="progress" id="cmpProgress" hidden><div class="bar" id="cmpBar"></div></div>
     <canvas id="cmpChart" height="220" aria-label="Mean F per strategy"></canvas>
     <p class="hint">Differences smaller than the spread are not meaningful.</p>
+    <div class="table-wrap">
     <table id="cmpTable" hidden>
       <thead><tr><th>Strategy</th><th>Mean F</th><th>± sd</th><th>Cascade</th><th>False trips</th></tr></thead>
       <tbody></tbody>
     </table>
+    </div>
     <h3>Round-2 adaptation check</h3>
     <p class="hint">Runs the stored Round-1 theta vector unchanged on the shifted
       environment (spread 0.45, cooldown 12). If an adapted vector is supplied,
