@@ -67,7 +67,7 @@ function drawBarChart(cv, items) {
   const padL = 44, padR = 12, padT = 12, padB = 44;
   const iw = W - padL - padR, ih = H - padT - padB;
   ctx.clearRect(0, 0, W, H);
-  const maxV = Math.max(...items.map(d => d.value)) * 1.15 || 1;
+  const maxV = Math.max(...items.map(d => d.value + (d.sd || 0))) * 1.15 || 1;
   const bw = Math.min(120, (iw / items.length) * 0.55);
   const colors = ["#2563eb", "#16a34a", "#9333ea", "#ea580c"];
   ctx.font = "11px sans-serif";
@@ -76,8 +76,20 @@ function drawBarChart(cv, items) {
     const bh = (d.value / maxV) * ih;
     ctx.fillStyle = colors[i % colors.length];
     ctx.fillRect(cx - bw / 2, padT + ih - bh, bw, bh);
+    // ±sd whisker
+    let labelY = padT + ih - bh - 6;
+    if (d.sd) {
+      const y1 = padT + ih - ((d.value + d.sd) / maxV) * ih;
+      const y2 = padT + ih - (Math.max(0, d.value - d.sd) / maxV) * ih;
+      ctx.strokeStyle = "#0f172a"; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(cx, y1); ctx.lineTo(cx, y2); ctx.stroke();
+      for (const y of [y1, y2]) {
+        ctx.beginPath(); ctx.moveTo(cx - 6, y); ctx.lineTo(cx + 6, y); ctx.stroke();
+      }
+      labelY = y1 - 6;
+    }
     ctx.fillStyle = "#1a2332"; ctx.textAlign = "center";
-    ctx.fillText(d.value.toFixed(2), cx, padT + ih - bh - 6);
+    ctx.fillText(d.value.toFixed(2), cx, labelY);
     ctx.fillStyle = "#475569";
     const words = d.label.split(" ");
     words.forEach((w, k) => ctx.fillText(w, cx, padT + ih + 16 + k * 13));
@@ -87,6 +99,13 @@ function drawBarChart(cv, items) {
   ctx.fillStyle = "#64748b"; ctx.textAlign = "right";
   ctx.fillText(maxV.toFixed(1), padL - 6, padT + 10);
 }
+
+/* ---------- statistics helpers ---------- */
+const mean = (a) => a.reduce((s, v) => s + v, 0) / a.length;
+const sd = (a) => {
+  const m = mean(a);
+  return Math.sqrt(a.reduce((s, v) => s + (v - m) * (v - m), 0) / Math.max(1, a.length - 1));
+};
 
 /* ---------- theta-vs-noise plot ---------- */
 function drawThetaPlot(cv, info) {
@@ -333,29 +352,51 @@ async function optimizeLive() {
   }
 }
 
-function compareStrategies() {
+async function compareStrategies() {
   const ctrl = readControls();
+  const nScen = parseInt($("nScen").value, 10) || 8;
   const params = currentParams(ctrl);
   const n = state.graph.edges.length;
   const strategies = [
-    ["fixed", new Array(n).fill(0.5)],
-    ["ga", state.bestTheta],
-    ["oracle", thetaFor("oracle", ctrl, n)],
+    [`fixed-θ=${ctrl.fixedTheta.toFixed(2)}`, new Array(n).fill(ctrl.fixedTheta)],
+    ["guided GA", state.bestTheta],
+    ["oracle reference", thetaFor("oracle", ctrl, n)],
   ];
-  if (state.liveTheta) strategies.push(["live", state.liveTheta]);
-  const seeds = makeSeeds(8, 9000);
-  const simOpts = { cooldown: ctrl.cooldown, nSteps: ctrl.nSteps, spreadP: ctrl.spreadP };
-  const rows = strategies.map(([key, theta]) => {
-    const e = evaluate(state.graph, params, theta, seeds, simOpts);
-    return { key, name: STRATEGY_NAMES[key], ...e };
-  });
-  drawBarChart($("cmpChart"), rows.map(r => ({ label: r.name, value: r.F })));
-  const tb = $("cmpTable"); tb.hidden = false;
-  tb.querySelector("tbody").innerHTML = rows.map(r =>
-    `<tr><td>${r.name}</td><td>${r.F.toFixed(2)}</td><td>${r.cascadeSize.toFixed(1)}</td><td>${r.falseTrips.toFixed(1)}</td></tr>`
-  ).join("");
-  // also refresh the single-scenario view for context
-  runScenario();
+  if (state.liveTheta) strategies.push(["live GA", state.liveTheta]);
+  const seeds = makeSeeds(nScen, 9000);
+  const simOpts = { cooldown: ctrl.cooldown, nSteps: ctrl.nSteps };
+  const btnIds = ["runBtn", "gaBtn", "cmpBtn", "staleBtn", "r1Btn", "r2Btn"];
+  btnIds.forEach(id => { $(id).disabled = true; });
+  $("cmpProgress").hidden = false;
+  $("cmpSub").textContent = `(mean ± sd of F over ${nScen} fresh scenarios — lower wins)`;
+  try {
+    const rows = [];
+    for (const [name, theta] of strategies) {
+      const Fs = [], cascs = [], fts = [];
+      for (let i = 0; i < seeds.length; i++) {
+        const m = simulate(state.graph, params, theta, seeds[i], simOpts);
+        Fs.push(scenarioCost(m)); cascs.push(m.cascadeSize); fts.push(m.falseTrips);
+        if (i % 4 === 3 || i === seeds.length - 1) {
+          const done = rows.length * seeds.length + i + 1;
+          const total = strategies.length * seeds.length;
+          $("cmpBar").style.width = `${(100 * done / total).toFixed(0)}%`;
+          $("gaStatus").textContent = `Comparing… ${done}/${total} scenarios`;
+          await new Promise(r => setTimeout(r, 0));   // let the UI breathe
+        }
+      }
+      rows.push({ name, F: mean(Fs), sd: sd(Fs), casc: mean(cascs), ft: mean(fts) });
+    }
+    drawBarChart($("cmpChart"), rows.map(r => ({ label: r.name, value: r.F, sd: r.sd })));
+    const tb = $("cmpTable"); tb.hidden = false;
+    tb.querySelector("tbody").innerHTML = rows.map(r =>
+      `<tr><td>${r.name}</td><td>${r.F.toFixed(2)}</td><td>± ${r.sd.toFixed(2)}</td>` +
+      `<td>${r.casc.toFixed(1)}</td><td>${r.ft.toFixed(1)}</td></tr>`
+    ).join("");
+    $("gaStatus").textContent = `Comparison done — ${nScen} scenarios per strategy.`;
+  } finally {
+    $("cmpProgress").hidden = true;
+    btnIds.forEach(id => { $(id).disabled = false; });
+  }
 }
 
 /* ---------- init ---------- */

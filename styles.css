@@ -41,7 +41,12 @@ main { padding: 20px 0 40px; }
 .strategy { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; margin: 0 0 14px; }
 .strategy legend { font-size: .9rem; color: var(--muted); padding: 0 6px; }
 .strategy label { display: inline-block; margin: 4px 14px 4px 0; font-size: .95rem; cursor: pointer; }
-.buttons { display: flex; flex-wrap: wrap; gap: 10px; }
+.buttons { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.inline-select { display: inline-flex; align-items: center; gap: 8px; font-size: 1rem; }
+.inline-select select {
+  padding: 8px 10px; font-size: 1rem; border: 1px solid var(--line);
+  border-radius: 8px; background: #fff; color: var(--ink);
+}
 .presets { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px; }
 .presets-label { font-size: .9rem; color: var(--muted); }
 button {
