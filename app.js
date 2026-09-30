@@ -352,9 +352,6 @@ async function runStaleCheck() {
   if (adapted) {
     const ad = evaluate(state.graph, params, adapted, seeds, simOpts);
     html += ` Adapted theta: mean F <b>${ad.F.toFixed(2)}</b> (Δ ${(stale.F - ad.F).toFixed(2)}).`;
-    $("adaptedNote").hidden = true;
-  } else {
-    $("adaptedNote").hidden = false;
   }
   $("staleResult").innerHTML = html;
 }
