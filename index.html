@@ -49,7 +49,7 @@
     <fieldset class="strategy">
       <legend>Threshold strategy</legend>
       <label><input type="radio" name="strategy" value="fixed" checked> Fixed (slider)</label>
-      <label><input type="radio" name="strategy" value="ga"> GA-optimized (precomputed on TRAIN seeds)</label>
+      <label><input type="radio" name="strategy" value="ga"> GA-optimized (one precomputed run: train F 21.77 / test F 34.91)</label>
       <label><input type="radio" name="strategy" value="oracle"> Oracle reference (θ<sub>e</sub> = min(1, noise<sub>e</sub> + 0.10))</label>
       <label id="liveOptLabel" hidden><input type="radio" name="strategy" value="live"> Live-GA result</label>
     </fieldset>
@@ -130,8 +130,9 @@
         slowness spreads from callee to caller.</li>
       <li><b>Breakers:</b> each edge watches a noisy stress signal (EMA of callee slowness);
         it opens for <i>cooldown</i> steps when the signal crosses its threshold θ.</li>
-      <li><b>GA-optimized:</b> per-edge thresholds evolved by a genetic algorithm with
-        betweenness-guided mutation (full study in the
+      <li><b>GA-optimized:</b> per-edge thresholds from <i>one</i> genetic-algorithm
+        run with betweenness-guided mutation (train F 21.77 / test F 34.91 on
+        its seeds) — shown as-is, not an average over runs (full study in the
         <a href="https://github.com/venky29823/epidemic-breakers-optiforge26">GitHub repo</a>).</li>
       <li><b>Oracle reference:</b> θ<sub>e</sub> = min(1, noise<sub>e</sub> + 0.10) —
         a reference heuristic: each edge's theta is set from its hidden noise
