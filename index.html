@@ -68,6 +68,19 @@
     </div>
     <h3 id="curveTitle">Epidemic curve</h3>
     <canvas id="curve" height="260" aria-label="Slow services over time"></canvas>
+    <p id="curveSummary" class="hint" aria-live="polite"></p>
+    <h3>Call graph <small>(node color = slow at the selected step; orange edge = breaker open)</small></h3>
+    <canvas id="graphCanvas" height="300" aria-label="Service call graph"></canvas>
+    <div class="scrub">
+      <label for="timeStep">Time step <span class="val" id="timeStepVal">–</span></label>
+      <input id="timeStep" type="range" min="0" max="39" step="1" value="39">
+    </div>
+    <div class="legend" aria-hidden="true">
+      <span><i class="dot slow"></i>slow service</span>
+      <span><i class="dot ok"></i>healthy service</span>
+      <span><i class="edge open"></i>breaker open</span>
+      <span><i class="edge closed"></i>edge closed</span>
+    </div>
     <h3>Strategy comparison <small>(mean F over 8 fresh scenarios — lower wins)</small></h3>
     <canvas id="cmpChart" height="220" aria-label="Mean F per strategy"></canvas>
     <table id="cmpTable" hidden>

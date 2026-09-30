@@ -80,7 +80,7 @@ function perEdgeParams(edges, noiseAmp, spreadP) {
 /* ---------------- cascade simulator (port of _run) ---------------- */
 
 function simulate(graph, params, theta, seed, o = {}) {
-  const { cooldown = 5, nSteps = 40, emaAlpha = 0.3, recordHistory = false } = o;
+  const { cooldown = 5, nSteps = 40, emaAlpha = 0.3, recordHistory = false, recordDetail = false } = o;
   const n = graph.n, edges = graph.edges, m = edges.length;
   const rng = new RNG(seed >>> 0);
 
@@ -95,6 +95,7 @@ function simulate(graph, params, theta, seed, o = {}) {
   const timer = new Int32Array(m);
   let falseTrips = 0, openEdgeSteps = 0;
   const hist = [];
+  const nodeHist = [], openHist = [];           // per-step snapshots (no RNG use)
 
   for (let step = 0; step < nSteps; step++) {
     // 1. spread along closed edges: callers of slow callees (snapshot semantics)
@@ -119,6 +120,13 @@ function simulate(graph, params, theta, seed, o = {}) {
     // 4. account open time, tick timers down
     for (let i = 0; i < m; i++) if (timer[i] > 0) { openEdgeSteps++; timer[i]--; }
     if (recordHistory) { let s = 0; for (let i = 0; i < n; i++) s += slow[i]; hist.push(s); }
+    if (recordDetail) {
+      // snapshot end-of-step state; reads existing arrays only, no RNG draws
+      nodeHist.push(Array.from(slow));
+      const oh = new Array(m);
+      for (let i = 0; i < m; i++) oh[i] = timer[i] > 0 ? 1 : 0;
+      openHist.push(oh);
+    }
   }
 
   let cascadeSize = 0; for (let i = 0; i < n; i++) cascadeSize += slow[i];
@@ -129,6 +137,7 @@ function simulate(graph, params, theta, seed, o = {}) {
     nSteps, nEdges: m,
   };
   if (recordHistory) out.slowHistory = hist;
+  if (recordDetail) { out.nodeHistory = nodeHist; out.openHistory = openHist; }
   return out;
 }
 

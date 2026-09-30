@@ -2,7 +2,7 @@
 "use strict";
 
 const $ = (id) => document.getElementById(id);
-const state = { graph: null, baseParams: null, bestTheta: null, liveTheta: null, ready: false };
+const state = { graph: null, baseParams: null, bestTheta: null, liveTheta: null, ready: false, lastRun: null, layout: null };
 
 /* ---------- canvas helpers (HiDPI aware) ---------- */
 function fitCanvas(cv) {
@@ -14,11 +14,17 @@ function fitCanvas(cv) {
   return [ctx, w, h];
 }
 
-function drawLineChart(cv, series, colors) {
+function drawLineChart(cv, series, colors, markerX = null) {
   const [ctx, W, H] = fitCanvas(cv);
   const padL = 44, padR = 12, padT = 12, padB = 30;
   const iw = W - padL - padR, ih = H - padT - padB;
   ctx.clearRect(0, 0, W, H);
+  const hasData = series.length > 0 && series.every(s => s.data.length > 0);
+  if (!hasData) {
+    ctx.fillStyle = "#64748b"; ctx.textAlign = "center"; ctx.font = "13px sans-serif";
+    ctx.fillText("no data", W / 2, H / 2);
+    return;
+  }
   let ymin = Infinity, ymax = -Infinity, xmax = 1;
   for (const s of series) for (let i = 0; i < s.data.length; i++) {
     ymin = Math.min(ymin, s.data[i]); ymax = Math.max(ymax, s.data[i]); xmax = Math.max(xmax, i);
@@ -48,6 +54,12 @@ function drawLineChart(cv, series, colors) {
   ctx.fillText("simulation step →", padL + iw / 2, H - 8);
   ctx.save(); ctx.translate(12, padT + ih / 2); ctx.rotate(-Math.PI / 2);
   ctx.fillText("slow services", 0, 0); ctx.restore();
+  if (markerX !== null && Number.isFinite(markerX)) {
+    const x = X(Math.min(Math.max(markerX, 0), xmax));
+    ctx.strokeStyle = "#0f172a"; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+    ctx.beginPath(); ctx.moveTo(x, padT); ctx.lineTo(x, padT + ih); ctx.stroke();
+    ctx.setLineDash([]);
+  }
 }
 
 function drawBarChart(cv, items) {
@@ -74,6 +86,81 @@ function drawBarChart(cv, items) {
   ctx.beginPath(); ctx.moveTo(padL, padT + ih); ctx.lineTo(padL + iw, padT + ih); ctx.stroke();
   ctx.fillStyle = "#64748b"; ctx.textAlign = "right";
   ctx.fillText(maxV.toFixed(1), padL - 6, padT + 10);
+}
+
+/* ---------- call-graph canvas (layout computed once, cached) ---------- */
+function graphLayout() {
+  if (state.layout) return state.layout;
+  const n = state.graph.n, pos = [];
+  for (let i = 0; i < n; i++) {
+    const a = (2 * Math.PI * i) / n - Math.PI / 2;
+    pos.push([Math.cos(a), Math.sin(a)]);
+  }
+  state.layout = pos;
+  return pos;
+}
+
+function drawGraph(cv, step) {
+  const [ctx, W, H] = fitCanvas(cv);
+  ctx.clearRect(0, 0, W, H);
+  const run = state.lastRun;
+  if (!run || !run.metrics.nodeHistory) return;
+  const m = run.metrics, pos = graphLayout(), n = state.graph.n;
+  const cx = W / 2, cy = H / 2, R = Math.max(10, Math.min(W, H) / 2 - 26);
+  const P = (i) => [cx + pos[i][0] * R, cy + pos[i][1] * R];
+  const node = m.nodeHistory[step], open = m.openHistory[step];
+  const edges = state.graph.edges;
+  for (let i = 0; i < edges.length; i++) {
+    const [x1, y1] = P(edges[i][0]), [x2, y2] = P(edges[i][1]);
+    ctx.strokeStyle = open[i] ? "#ea580c" : "#e2e8f0";
+    ctx.lineWidth = open[i] ? 2.5 : 1;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  }
+  for (let i = 0; i < n; i++) {
+    const [x, y] = P(i);
+    ctx.fillStyle = node[i] ? "#dc2626" : "#cbd5e1";
+    ctx.beginPath(); ctx.arc(x, y, 7, 0, 2 * Math.PI); ctx.fill();
+  }
+  let slowN = 0, openN = 0;
+  for (let i = 0; i < n; i++) slowN += node[i];
+  for (let i = 0; i < open.length; i++) openN += open[i];
+  cv.setAttribute("aria-label",
+    `Call graph at step ${step} of ${m.nSteps}: ${slowN} slow services, ${openN} breakers open.`);
+}
+
+/* ---------- run rendering ---------- */
+function currentStep() {
+  const run = state.lastRun;
+  const max = run ? run.metrics.nSteps - 1 : 0;
+  const el = $("timeStep");
+  let v = parseInt(el.value, 10);
+  if (!Number.isFinite(v)) v = max;
+  return Math.min(Math.max(v, 0), max);
+}
+
+function renderDynamic() {
+  const run = state.lastRun;
+  if (!run || !state.graph) return;
+  const step = currentStep();
+  $("timeStepVal").textContent = step;
+  drawLineChart($("curve"),
+    [{ label: `${run.label} (seed ${run.seed})`, data: run.metrics.slowHistory }],
+    ["#2563eb"], step);
+  drawGraph($("graphCanvas"), step);
+  const hist = run.metrics.slowHistory;
+  let peak = 0, peakStep = 0;
+  hist.forEach((v, i) => { if (v > peak) { peak = v; peakStep = i; } });
+  $("curveSummary").textContent =
+    `Peak ${peak} slow services at step ${peakStep}, ${run.metrics.falseTrips} false trips.`;
+}
+
+function showRun(metrics, label, seed) {
+  state.lastRun = { metrics, label, seed };
+  const slider = $("timeStep");
+  slider.max = metrics.nSteps - 1;
+  slider.value = metrics.nSteps - 1;
+  renderMetrics(metrics, label);
+  renderDynamic();
 }
 
 /* ---------- environment / strategies ---------- */
@@ -124,11 +211,8 @@ function runScenario() {
   const params = currentParams(ctrl);
   const theta = thetaFor(ctrl.strategy, ctrl, state.graph.edges.length);
   const m = simulate(state.graph, params, theta, ctrl.seed,
-    { cooldown: ctrl.cooldown, nSteps: ctrl.nSteps, recordHistory: true });
-  renderMetrics(m, `${STRATEGY_NAMES[ctrl.strategy]}, seed ${ctrl.seed}`);
-  drawLineChart($("curve"),
-    [{ label: `${STRATEGY_NAMES[ctrl.strategy]} (seed ${ctrl.seed})`, data: m.slowHistory }],
-    ["#2563eb"]);
+    { cooldown: ctrl.cooldown, nSteps: ctrl.nSteps, recordHistory: true, recordDetail: true });
+  showRun(m, `${STRATEGY_NAMES[ctrl.strategy]}, seed ${ctrl.seed}`, ctrl.seed);
 }
 
 async function optimizeLive() {
@@ -151,10 +235,8 @@ async function optimizeLive() {
     document.querySelector('input[name="strategy"][value="live"]').checked = true;
     $("gaStatus").textContent = `Done — best train F ${res.bestF.toFixed(2)}. Showing its epidemic curve.`;
     const m = simulate(state.graph, params, res.best, ctrl.seed,
-      { cooldown: ctrl.cooldown, nSteps: ctrl.nSteps, recordHistory: true });
-    renderMetrics(m, `live GA, seed ${ctrl.seed}`);
-    drawLineChart($("curve"),
-      [{ label: `live GA (seed ${ctrl.seed})`, data: m.slowHistory }], ["#16a34a"]);
+      { cooldown: ctrl.cooldown, nSteps: ctrl.nSteps, recordHistory: true, recordDetail: true });
+    showRun(m, `live GA, seed ${ctrl.seed}`, ctrl.seed);
   } finally {
     $("gaProgress").hidden = true;
     $("gaBtn").disabled = false; $("runBtn").disabled = false; $("cmpBtn").disabled = false;
@@ -220,7 +302,8 @@ async function init() {
   $("runBtn").addEventListener("click", runScenario);
   $("gaBtn").addEventListener("click", optimizeLive);
   $("cmpBtn").addEventListener("click", compareStrategies);
-  window.addEventListener("resize", () => { if (state.ready) runScenario(); });
+  $("timeStep").addEventListener("input", renderDynamic);
+  window.addEventListener("resize", () => { if (state.ready && state.lastRun) renderDynamic(); });
 }
 
 document.addEventListener("DOMContentLoaded", init);
