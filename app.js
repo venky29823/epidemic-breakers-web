@@ -232,15 +232,62 @@ function showRun(metrics, label, seed, extra = {}) {
 
 /* ---------- environment / strategies ---------- */
 function readControls() {
+  const finite = (v, d) => (Number.isFinite(v) ? v : d);
+  const checked = document.querySelector('input[name="strategy"]:checked');
   return {
-    seed: parseInt($("seed").value, 10) || 0,
-    spreadP: parseFloat($("spreadP").value),
-    cooldown: parseInt($("cooldown").value, 10),
-    noiseAmp: parseFloat($("noise").value),
-    nSteps: parseInt($("steps").value, 10),
-    fixedTheta: parseFloat($("theta").value),
-    strategy: document.querySelector('input[name="strategy"]:checked').value,
+    seed: finite(parseInt($("seed").value, 10), 7),
+    spreadP: Math.min(1, Math.max(0, finite(parseFloat($("spreadP").value), 0.25))),
+    cooldown: Math.max(0, Math.round(finite(parseFloat($("cooldown").value), 5))),
+    noiseAmp: Math.max(0, finite(parseFloat($("noise").value), 0.30)),
+    nSteps: Math.max(1, Math.round(finite(parseFloat($("steps").value), 40))),
+    fixedTheta: Math.min(1, Math.max(0, finite(parseFloat($("theta").value), 0.50))),
+    strategy: checked ? checked.value : "fixed",
   };
+}
+
+/* ---------- shareable URL state ---------- */
+function readURLState() {
+  const q = new URLSearchParams(window.location.search);
+  const out = {};
+  const finite = (v) => (Number.isFinite(v) ? v : undefined);
+  let v;
+  if ((v = finite(parseInt(q.get("seed"), 10))) !== undefined) out.seed = v;
+  if ((v = finite(parseFloat(q.get("spread")))) !== undefined) out.spreadP = Math.min(1, Math.max(0, v));
+  if ((v = finite(parseInt(q.get("cooldown"), 10))) !== undefined) out.cooldown = Math.max(0, v);
+  if ((v = finite(parseFloat(q.get("noise")))) !== undefined) out.noiseAmp = Math.max(0, v);
+  if ((v = finite(parseInt(q.get("steps"), 10))) !== undefined) out.nSteps = Math.max(1, v);
+  if ((v = finite(parseFloat(q.get("theta")))) !== undefined) out.fixedTheta = Math.min(1, Math.max(0, v));
+  const s = q.get("strategy");
+  if (["fixed", "ga", "oracle", "live"].includes(s)) out.strategy = s;
+  return out;
+}
+
+function applyURLState() {
+  const s = readURLState();
+  if (s.seed !== undefined) $("seed").value = s.seed;
+  if (s.spreadP !== undefined) setSlider("spreadP", s.spreadP);
+  if (s.cooldown !== undefined) setSlider("cooldown", s.cooldown);
+  if (s.noiseAmp !== undefined) setSlider("noise", s.noiseAmp);
+  if (s.nSteps !== undefined) setSlider("steps", s.nSteps);
+  if (s.fixedTheta !== undefined) setSlider("theta", s.fixedTheta);
+  if (s.strategy !== undefined && !(s.strategy === "live" && $("liveOptLabel").hidden)) {
+    const radio = document.querySelector(`input[name="strategy"][value="${s.strategy}"]`);
+    if (radio) radio.checked = true;
+  }
+}
+
+function writeURLState() {
+  const ctrl = readControls();
+  const q = new URLSearchParams({
+    seed: String(ctrl.seed),
+    spread: String(ctrl.spreadP),
+    cooldown: String(ctrl.cooldown),
+    noise: String(ctrl.noiseAmp),
+    steps: String(ctrl.nSteps),
+    theta: String(ctrl.fixedTheta),
+    strategy: ctrl.strategy,
+  });
+  window.history.replaceState(null, "", `${window.location.pathname}?${q.toString()}`);
 }
 
 function currentParams(ctrl) {
@@ -319,6 +366,7 @@ function runScenario() {
   const theta = thetaFor(ctrl.strategy, ctrl, state.graph.edges.length);
   const m = simulate(state.graph, params, theta, ctrl.seed,
     { cooldown: ctrl.cooldown, nSteps: ctrl.nSteps, recordHistory: true, recordDetail: true });
+  writeURLState();
   showRun(m, `${STRATEGY_NAMES[ctrl.strategy]}, seed ${ctrl.seed}`, ctrl.seed,
     { strategy: ctrl.strategy, theta: Array.from(theta), noise: Array.from(params.noise) });
 }
@@ -341,6 +389,7 @@ async function optimizeLive() {
     state.liveTheta = res.best;
     $("liveOptLabel").hidden = false;
     document.querySelector('input[name="strategy"][value="live"]').checked = true;
+    writeURLState();
     $("gaStatus").textContent = `Done — best train F ${res.bestF.toFixed(2)}. Showing its epidemic curve.`;
     const m = simulate(state.graph, params, res.best, ctrl.seed,
       { cooldown: ctrl.cooldown, nSteps: ctrl.nSteps, recordHistory: true, recordDetail: true });
@@ -412,6 +461,7 @@ async function init() {
   bindSlider("noise", "noiseVal", v => v.toFixed(2));
   bindSlider("steps", "stepsVal", v => v.toFixed(0));
   bindSlider("theta", "thetaVal", v => v.toFixed(2));
+  applyURLState();
   try {
     const [g, ep, bt] = await Promise.all([
       fetch("data/graph.json").then(r => r.json()),
@@ -438,6 +488,8 @@ async function init() {
   $("r2Btn").addEventListener("click", () => applyPreset(0.45, 12));
   $("staleBtn").addEventListener("click", runStaleCheck);
   $("timeStep").addEventListener("input", renderDynamic);
+  document.querySelectorAll('input[name="strategy"]').forEach(r =>
+    r.addEventListener("change", writeURLState));
   window.addEventListener("resize", () => { if (state.ready && state.lastRun) renderDynamic(); });
 }
 
