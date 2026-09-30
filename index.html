@@ -52,6 +52,11 @@
       <button id="gaBtn" disabled>🧬 Optimize live (small-budget demo, not the full study)</button>
       <button id="cmpBtn" disabled>⚔️ Compare strategies</button>
     </div>
+    <div class="presets">
+      <span class="presets-label">Environment presets:</span>
+      <button id="r1Btn" disabled>Round 1 (spread 0.25, cooldown 5)</button>
+      <button id="r2Btn" disabled>Round 2 shift (spread 0.45, cooldown 12)</button>
+    </div>
     <div id="gaStatus" class="status" role="status"></div>
     <div class="progress" id="gaProgress" hidden><div class="bar" id="gaBar"></div></div>
     <p class="hint">Tip: drag θ low and false trips explode; drag it high and the cascade
@@ -91,6 +96,17 @@
       <thead><tr><th>Strategy</th><th>Mean F</th><th>Cascade</th><th>False trips</th></tr></thead>
       <tbody></tbody>
     </table>
+    <h3>Round-2 adaptation check</h3>
+    <p class="hint">Runs the stored Round-1 theta vector unchanged on the shifted
+      environment (spread 0.45, cooldown 12). If an adapted vector is supplied,
+      it is compared head-to-head on the same scenarios.</p>
+    <div class="buttons">
+      <button id="staleBtn" disabled>Run stale theta on Round-2 env</button>
+    </div>
+    <p id="staleResult" class="hint" aria-live="polite"></p>
+    <p id="adaptedNote" class="hint">TODO: add <code>data/round2_theta.json</code>
+      (adapted threshold vector, 111 values) to enable the stale-vs-adapted
+      comparison — no vector is fabricated here.</p>
   </section>
 
   <section class="panel" aria-label="Method">

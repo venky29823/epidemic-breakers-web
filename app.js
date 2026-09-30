@@ -253,6 +253,46 @@ function renderMetrics(m, label) {
   $("curveTitle").textContent = `Epidemic curve — ${label}`;
 }
 
+/* ---------- environment presets & Round-2 stale check ---------- */
+function setSlider(id, v) {
+  const el = $(id);
+  el.value = v;
+  el.dispatchEvent(new Event("input"));   // refresh the bound value label
+}
+
+function applyPreset(spreadP, cooldown) {
+  setSlider("spreadP", spreadP);
+  setSlider("cooldown", cooldown);
+  runScenario();
+}
+
+async function runStaleCheck() {
+  applyPreset(0.45, 12);   // Round-2 shift; the main view follows the new env
+  const ctrl = readControls();
+  const params = currentParams(ctrl);
+  const seeds = makeSeeds(8, 9000);
+  const simOpts = { cooldown: ctrl.cooldown, nSteps: ctrl.nSteps };
+  const stale = evaluate(state.graph, params, state.bestTheta, seeds, simOpts);
+  let html = `Stale Round-1 theta on Round-2 env: mean F <b>${stale.F.toFixed(2)}</b> over 8 scenarios.`;
+  // TODO: if data/round2_theta.json exists, compare stale vs adapted here.
+  let adapted = null;
+  try {
+    const r = await fetch("data/round2_theta.json");
+    if (r.ok) {
+      const v = await r.json();
+      if (Array.isArray(v) && v.length === state.graph.edges.length) adapted = v;
+    }
+  } catch (e) { /* absent: do not fabricate an adapted vector */ }
+  if (adapted) {
+    const ad = evaluate(state.graph, params, adapted, seeds, simOpts);
+    html += ` Adapted theta: mean F <b>${ad.F.toFixed(2)}</b> (Δ ${(stale.F - ad.F).toFixed(2)}).`;
+    $("adaptedNote").hidden = true;
+  } else {
+    $("adaptedNote").hidden = false;
+  }
+  $("staleResult").innerHTML = html;
+}
+
 /* ---------- actions ---------- */
 function runScenario() {
   const ctrl = readControls();
@@ -345,6 +385,7 @@ async function init() {
     state.bestTheta = bt;
     state.ready = true;
     $("runBtn").disabled = false; $("gaBtn").disabled = false; $("cmpBtn").disabled = false;
+    $("r1Btn").disabled = false; $("r2Btn").disabled = false; $("staleBtn").disabled = false;
     runScenario();
   } catch (e) {
     $("gaStatus").textContent = "Failed to load simulation data: " + e.message;
@@ -352,6 +393,9 @@ async function init() {
   $("runBtn").addEventListener("click", runScenario);
   $("gaBtn").addEventListener("click", optimizeLive);
   $("cmpBtn").addEventListener("click", compareStrategies);
+  $("r1Btn").addEventListener("click", () => applyPreset(0.25, 5));
+  $("r2Btn").addEventListener("click", () => applyPreset(0.45, 12));
+  $("staleBtn").addEventListener("click", runStaleCheck);
   $("timeStep").addEventListener("input", renderDynamic);
   window.addEventListener("resize", () => { if (state.ready && state.lastRun) renderDynamic(); });
 }
