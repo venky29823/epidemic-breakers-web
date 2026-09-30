@@ -1,0 +1,12 @@
+# Dependencies (none — static site; this is precautionary)
+node_modules/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# Local scratch
+/tmp/
+*.log

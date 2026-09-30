@@ -5,6 +5,13 @@
 
 /* ---------------- seeded RNG ---------------- */
 
+/**
+ * 53-bit string hash (cyrb53). Used to seed deterministic RNG streams from
+ * edge lists and seed-base strings. Not cryptographic.
+ * @param {string} str - input string
+ * @param {number} [seed=0] - integer seed mixed into the hash
+ * @returns {number} 53-bit unsigned integer
+ */
 function cyrb53(str, seed = 0) {
   let h1 = 0xdeadbeef ^ seed, h2 = 0x41c6ce57 ^ seed;
   for (let i = 0; i < str.length; i++) {
@@ -17,6 +24,7 @@ function cyrb53(str, seed = 0) {
   return (h2 >>> 0) * 4294967296 + (h1 >>> 0);
 }
 
+/** mulberry32 PRNG factory. Fast, small, good enough for a demo (NOT the Python study's PCG64). */
 function mulberry32(a) {
   return function () {
     a |= 0; a = (a + 0x6d2b79f5) | 0;
@@ -26,6 +34,10 @@ function mulberry32(a) {
   };
 }
 
+/**
+ * Seeded PRNG wrapper: uniform, integer, range, Gaussian (Box-Muller) and
+ * Fisher-Yates shuffle draws.
+ */
 class RNG {
   constructor(seed) { this.f = mulberry32(seed >>> 0); this.spare = null; }
   next() { return this.f(); }
@@ -48,6 +60,14 @@ class RNG {
   }
 }
 
+/**
+ * Generate n deterministic scenario seeds from a base integer.
+ * NOTE: the values differ from Python's make_seeds (NumPy PCG64); only the
+ * distributional role (n i.i.d.-style scenario draws) is shared.
+ * @param {number} n - number of seeds
+ * @param {number} base - base integer
+ * @returns {number[]} n seeds in [0, 2^31)
+ */
 function makeSeeds(n, base) {
   const rng = new RNG(cyrb53("seeds:" + base));
   const out = [];
@@ -55,16 +75,30 @@ function makeSeeds(n, base) {
   return out;
 }
 
+/** Clamp v into [lo, hi]. @param {number} v @param {number} lo @param {number} hi @returns {number} */
 const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 /* ---------------- graph ---------------- */
 
-/** Build the service graph object from exported data: {n, edges:[[u,v],...]} */
+/**
+ * Build the service graph object from exported data.
+ * @param {{n:number, edges:Array<[number,number]>}} data - parsed graph.json
+ * @returns {{n:number, edges:Array<[number,number]>}}
+ */
 function loadGraph(data) {
   return { n: data.n, edges: data.edges.map(e => [e[0], e[1]]) };
 }
 
-/** Deterministic per-edge noise/spread params (for non-default environments). */
+/**
+ * Deterministic per-edge noise amplitudes and spread probabilities for
+ * NON-DEFAULT environments (slider changes). Seeded by a hash of the edge
+ * list; differs from Python's _per_edge_params (sha256-seeded NumPy), so
+ * only the baked-in default environment is cross-language identical.
+ * @param {Array<[number,number]>} edges
+ * @param {number} noiseAmp
+ * @param {number} spreadP
+ * @returns {{noise:Float64Array, p:Float64Array}}
+ */
 function perEdgeParams(edges, noiseAmp, spreadP) {
   const key = JSON.stringify(edges.map(e => e.slice()).sort((a, b) => a[0] - b[0] || a[1] - b[1]));
   const rng = new RNG(cyrb53(key));
@@ -79,6 +113,24 @@ function perEdgeParams(edges, noiseAmp, spreadP) {
 
 /* ---------------- cascade simulator (port of _run) ---------------- */
 
+/**
+ * Run one failure scenario: inject a single slow service, then simulate
+ * failure spread, EMA stress estimation, noisy breaker trips and cooldown.
+ * Port of Python's _run; dynamics are equivalent but the RNG stream differs
+ * (per-edge draws here vs n×n matrix draws in Python), so trajectories are
+ * only distributionally comparable — see README "Python parity".
+ * @param {{n:number, edges:Array<[number,number]>}} graph
+ * @param {{noise:Float64Array, p:Float64Array}} params - per-edge noise/spread
+ * @param {ArrayLike<number>} theta - one threshold per edge
+ * @param {number} seed - scenario seed
+ * @param {object} [o]
+ * @param {number} [o.cooldown=5]
+ * @param {number} [o.nSteps=40]
+ * @param {number} [o.emaAlpha=0.3]
+ * @param {boolean} [o.recordHistory=false] - attach slowHistory
+ * @param {boolean} [o.recordDetail=false] - attach nodeHistory/openHistory (no RNG use)
+ * @returns {{cascadeSize:number, falseTrips:number, latencyPenalty:number, nSteps:number, nEdges:number}}
+ */
 function simulate(graph, params, theta, seed, o = {}) {
   const { cooldown = 5, nSteps = 40, emaAlpha = 0.3, recordHistory = false, recordDetail = false } = o;
   const n = graph.n, edges = graph.edges, m = edges.length;
@@ -143,10 +195,26 @@ function simulate(graph, params, theta, seed, o = {}) {
 
 /* ---------------- fitness ---------------- */
 
+/**
+ * Scenario cost: F = cascadeSize + 2*falseTrips + 0.1*latencyPenalty.
+ * Port of Python's scenario_cost. Lower is better.
+ * @param {{cascadeSize:number, falseTrips:number, latencyPenalty:number}} m
+ * @returns {number}
+ */
 function scenarioCost(m) {
   return m.cascadeSize + 2 * m.falseTrips + 0.1 * m.latencyPenalty;
 }
 
+/**
+ * Mean scenario cost of a threshold vector over a list of seeds.
+ * Port of Python's evaluate.
+ * @param {{n:number, edges:Array<[number,number]>}} graph
+ * @param {{noise:Float64Array, p:Float64Array}} params
+ * @param {ArrayLike<number>} theta
+ * @param {number[]} seeds
+ * @param {object} [simOpts] - passed through to simulate()
+ * @returns {{F:number, cascadeSize:number, falseTrips:number, latencyPenalty:number}}
+ */
 function evaluate(graph, params, theta, seeds, simOpts = {}) {
   let F = 0, casc = 0, ft = 0, lat = 0;
   for (const s of seeds) {
@@ -159,6 +227,14 @@ function evaluate(graph, params, theta, seeds, simOpts = {}) {
 
 /* ---------------- edge betweenness (Brandes, directed, unweighted) ---------------- */
 
+/**
+ * Edge betweenness centrality (Brandes algorithm, directed, unweighted).
+ * UNNORMALIZED — networkx returns ÷ n(n-1). Only ratios are used downstream
+ * (guidedWeights sum-normalizes), and parity tests compare ratios.
+ * @param {number} n - node count
+ * @param {Array<[number,number]>} edges
+ * @returns {Float64Array} per-edge betweenness, edge order
+ */
 function edgeBetweenness(n, edges) {
   const adj = Array.from({ length: n }, () => []);
   edges.forEach(([u, v], i) => adj[u].push([v, i]));
@@ -190,7 +266,13 @@ function edgeBetweenness(n, edges) {
   return bet;
 }
 
-/** 50/50 blend of normalized betweenness and uniform (port of edge_weights). */
+/**
+ * Per-edge mutation weights: 50/50 blend of normalized betweenness and
+ * uniform (port of Python's edge_weights). Pure betweenness would starve
+ * low-betweenness edges of mutations.
+ * @param {{n:number, edges:Array<[number,number]>}} graph
+ * @returns {Float64Array} weights summing to 1
+ */
 function guidedWeights(graph) {
   const m = graph.edges.length;
   const bet = edgeBetweenness(graph.n, graph.edges);
@@ -202,8 +284,8 @@ function guidedWeights(graph) {
 
 /* ---------------- mini GA (port of run_ga, small budgets for the browser) ---------------- */
 
+/** Sample k distinct indices ∝ weights, skipping `forbid`. */
 function sampleWeighted(rng, weights, k, forbid) {
-  // k distinct indices, probability proportional to weights, skipping `forbid`
   const idx = [];
   const avail = [];
   for (let i = 0; i < weights.length; i++) if (!forbid.has(i)) avail.push(i);
@@ -222,8 +304,26 @@ function binomial(rng, n, p) {
 }
 
 /**
- * Genetic algorithm over threshold vectors. Async (yields between generations
- * so the UI stays alive). Returns {best, bestF, history}.
+ * Genetic algorithm over threshold vectors: tournament-3 selection, uniform
+ * crossover (p=0.9), elitism=2, Gaussian mutation (σ=0.08) guided by
+ * betweenness-blended weights. Async — yields to the event loop between
+ * generations so the UI stays alive. Port of Python's run_ga at a small
+ * browser budget; NOT the full study run.
+ * @param {{n:number, edges:Array<[number,number]>}} graph
+ * @param {{noise:Float64Array, p:Float64Array}} params
+ * @param {number[]} trainSeeds
+ * @param {object} [o]
+ * @param {number} [o.popSize=12]
+ * @param {number} [o.generations=12]
+ * @param {number} [o.seed=42]
+ * @param {boolean} [o.guided=true]
+ * @param {number} [o.mutRate=0.05]
+ * @param {number} [o.mutSigma=0.08]
+ * @param {number} [o.initLo=0.2]
+ * @param {number} [o.initHi=0.7]
+ * @param {object} [o.simOpts]
+ * @param {(gen:number, total:number, bestF:number) => void} [onGen] - progress callback
+ * @returns {Promise<{best:number[], bestF:number, history:number[]}>}
  */
 async function runGA(graph, params, trainSeeds, o = {}, onGen = null) {
   const { popSize = 12, generations = 12, seed = 42, guided = true,
